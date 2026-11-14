@@ -1,4 +1,4 @@
-# CalorieTracker AI 🍎
+# AI Calorie Tracker 🍎
 
 A personal AI-powered calorie & macro tracker I built as my own alternative to Cal AI.
 I wanted the same experience without paying a yearly subscription, so I created an app that costs less than €1/month to run while still providing accurate AI-powered food analysis.
@@ -23,6 +23,39 @@ delightful micro-interactions throughout.
 > anyone's Anthropic credit. Data lives in your browser's local storage and is
 > never synced. For real AI estimates and cloud sync, clone the repo and point it
 > at your own Supabase project (see [Configuration](#configuration) below).
+
+## 🧠 How it works
+
+```mermaid
+flowchart LR
+  subgraph Client["Expo app · iOS / Android / web"]
+    UI["Logger<br/>photo · description · barcode"]
+    PIPE["Estimation pipeline<br/>estimate-pipeline.ts"]
+    VAL["Validation<br/>estimate-validate.ts"]
+    PLAN["Adaptive plan<br/>BMR · weight trend"]
+    STORE[("Local storage")]
+  end
+  subgraph Cloud["Supabase (optional)"]
+    EDGE["Edge Function<br/>auth + daily AI limit"]
+    DB[("Postgres + RLS")]
+  end
+  OFF["Open Food Facts"]
+  LLM["Claude vision model"]
+
+  UI --> PIPE
+  UI -- "barcode" --> OFF --> PIPE
+  PIPE -- "photo + text" --> EDGE --> LLM
+  LLM --> VAL --> PIPE
+  PIPE -- "no backend" --> HEUR["Offline heuristic<br/>bundled food library"]
+  PIPE --> STORE --> PLAN
+  STORE <-- "sync & merge" --> DB
+```
+
+- **The model never owns the numbers.** Scanned and remembered products keep their label values; the model is asked only about the rest of the plate, and the meal total is recomputed as the sum of its parts, so a model total that disagrees with its own breakdown never reaches the diary.
+- **What you typed is a constraint, not a hint.** "The milk is 150 kcal" is enforced after the model answers, not just requested beforehand.
+- **The API key never ships in the app.** Every AI call goes through a Supabase Edge Function that verifies the session and enforces a per-user daily limit, failing closed if the limiter is unavailable.
+- **Works offline first.** Without a backend, estimates fall back to a keyword heuristic over a bundled food library and everything stays on the device; sync is a tested union merge, not last-write-wins.
+- **The plan adapts.** Targets start from Mifflin-St Jeor BMR and activity, then follow a smoothed weight trend (Theil–Sen rate fitting) toward the goal weight and date.
 
 ## 📱 The interface
 
@@ -70,7 +103,7 @@ and a Supabase project (below) to unlock real AI estimates and cloud sync.
   from what you have logged before; plus a read-only Ask surface that answers questions
   about your own food log. Both work without a backend, and get better with one.
 - **Weight tracking** with an SVG trend chart and projection toward your goal.
-- **Accounts & cloud sync** — optional Supabase email/password auth; meals, weights, and compressed meal photos sync per-user across devices (local-only until configured).
+- **Accounts & cloud sync** — optional Supabase email/password auth; meals and weights sync per-user across devices, while meal photos stay on the device (local-only until configured).
 - **Premium, motion-rich design** — a dark-first theme built around a focused emerald accent on flat near-black surfaces, animated calorie rings, smoothly-filling macro bars, shimmer loading states, confetti on streak milestones, and haptic feedback. All colors/shadows live as tokens in [`src/constants/theme.ts`](src/constants/theme.ts); light & dark are both first-class.
 - **Streak reminders** — optional local notifications (no-ops on web).
 
