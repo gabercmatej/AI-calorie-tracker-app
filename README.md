@@ -1,15 +1,42 @@
-# AI Calorie Tracker 🍎
+<div align="center">
 
-A personal AI-powered calorie & macro tracker I built as my own alternative to Cal AI.
-I wanted the same experience without paying a yearly subscription, so I created an app that costs less than €1/month to run while still providing accurate AI-powered food analysis.
-Beyond photo recognition, you can improve estimates by adding a meal description, scan barcodes for exact nutrition data, and follow an adaptive calorie and macro plan that evolves with your goals and progress.
+# AI Calorie Tracker
 
-Built with **Expo** + **React Native**.
-Runs on **iOS, Android, and web** from a single codebase.
+**Snap a meal, get calories and macros. An adaptive nutrition coach built around a vision-model pipeline that never lets the model own the numbers.**
 
-A **premium, dark-first UI** built around a focused emerald accent on flat
-near-black surfaces — fluid spring animations, animated progress rings, and
-delightful micro-interactions throughout.
+[![Live demo](https://img.shields.io/badge/▶_Live_demo-try_it_in_your_browser-10B981?style=for-the-badge)](https://calorie-tracker-ai-demo.vercel.app)
+
+![Expo](https://img.shields.io/badge/Expo-57-000020?logo=expo&logoColor=white)
+![React Native](https://img.shields.io/badge/React_Native-0.86-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Edge_Functions_·_RLS-3ECF8E?logo=supabase&logoColor=white)
+![Claude](https://img.shields.io/badge/Claude-vision-D97757)
+![Tests](https://img.shields.io/badge/tests-node:test-2EA44F)
+
+<img src="docs/screenshots/welcome.png" alt="Welcome" width="19%">
+<img src="docs/screenshots/home.png" alt="Home: today's dashboard" width="19%">
+<img src="docs/screenshots/progress.png" alt="Progress: weight trend and adaptive plan" width="19%">
+<img src="docs/screenshots/food.png" alt="Food: meal ideas ranked against what's left today" width="19%">
+<img src="docs/screenshots/profile.png" alt="Profile: goals and preferences" width="19%">
+
+<sub><b>Welcome</b> · <b>Home</b> dashboard · <b>Progress</b> weight trend &amp; adaptive plan · <b>Food</b> ideas ranked against what's left today · <b>Profile</b></sub>
+
+</div>
+
+## Why I built it
+
+I wanted the experience of apps like Cal AI without a yearly subscription, so I built my own: photo and text meal logging with a vision model, exact barcode nutrition, and a calorie and macro plan that adapts to real progress. It runs on iOS, Android and web from one Expo codebase, and costs less than €1 a month to run for personal use on free tiers and pay-per-call AI.
+
+### Highlights
+
+| | |
+|---|---|
+| 📸 **Vision-model meal estimates** | Photo and/or description → calories and macros, validated before they reach the diary |
+| 🏷️ **Barcode scanning** | Exact label nutrition from Open Food Facts; label values are never re-estimated |
+| 📈 **Adaptive plan** | Mifflin-St Jeor targets that follow a smoothed (Theil–Sen) weight trend toward your goal |
+| 🍽️ **Food ideas & Ask** | Recipes ranked against your pantry and remaining budget; questions answered from your own log |
+| 🔒 **Secure AI access** | API key behind a Supabase Edge Function with per-user daily limits, failing closed |
+| 📴 **Offline first** | Fully usable without a backend; sync is a tested union merge |
 
 ## 🌐 Live demo
 
@@ -56,20 +83,6 @@ flowchart LR
 - **The API key never ships in the app.** Every AI call goes through a Supabase Edge Function that verifies the session and enforces a per-user daily limit, failing closed if the limiter is unavailable.
 - **Works offline first.** Without a backend, estimates fall back to a keyword heuristic over a bundled food library and everything stays on the device; sync is a tested union merge, not last-write-wins.
 - **The plan adapts.** Targets start from Mifflin-St Jeor BMR and activity, then follow a smoothed weight trend (Theil–Sen rate fitting) toward the goal weight and date.
-
-## 📱 The interface
-
-<p align="center">
-  <img src="docs/screenshots/welcome.png"  alt="Welcome"  width="20%">
-  &nbsp;
-  <img src="docs/screenshots/home.png"     alt="Home — today's dashboard"  width="20%">
-  &nbsp;
-  <img src="docs/screenshots/progress.png" alt="Progress — weight trends"  width="20%">
-  &nbsp;
-  <img src="docs/screenshots/food.png"     alt="Food — meal ideas ranked against what's left today"  width="20%">
-</p>
-
-<p align="center"><sub><b>Welcome</b> · <b>Home</b> dashboard with animated calorie ring &amp; floating nutrient chips · <b>Progress</b> weight trends &amp; adaptive plan · <b>Food</b> meal ideas ranked against the calories &amp; protein you have left · <b>Profile</b> settings</sub></p>
 
 ## Get started
 
