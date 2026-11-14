@@ -44,27 +44,26 @@ Most AI calorie apps send a photo to a model and print whatever comes back. This
 
 ```mermaid
 flowchart LR
-  IN["📸 Photo + ✍️ description<br/>+ 🏷️ barcode"] --> A
+  INPUT["Photo + description + barcode"] --> A
 
   subgraph PIPE["Estimation pipeline"]
-    direction LR
-    A["<b>A · Parse</b><br/>deterministic extraction<br/>foods · counts · stated kcal"]
-    B["<b>B · Resolve</b><br/>scanned labels<br/>remembered products"]
-    C["<b>C · Model</b><br/>one vision call<br/>for the unknown rest"]
-    V["<b>Validate & repair</b><br/>dropped foods · invented foods<br/>totals ≠ sum of parts"]
-    D["<b>D · Correct</b><br/>one follow-up call<br/>only if still needed"]
+    A["A. Parse<br/>deterministic extraction<br/>foods, counts, stated kcal"]
+    B["B. Resolve<br/>scanned labels<br/>remembered products"]
+    C["C. Model<br/>one vision call<br/>for the unknown rest"]
+    V["Validate and repair<br/>dropped or invented foods<br/>totals vs. sum of parts"]
+    D["D. Correct<br/>one follow-up call<br/>only if still needed"]
     A --> B --> C --> V
-    V -- "missing food" --> D --> V
+    V -->|missing food| D --> V
   end
 
   OFF[("Open Food Facts")] --> B
   MEM[("Product memory")] --> B
-  C <-->|"auth · daily quota · fail-closed"| EDGE["Supabase<br/>Edge Function"] <--> LLM["Claude<br/>vision"]
-  C -. "offline / no key" .-> LIB["Reference library<br/>~300 foods"]
+  C -->|auth, daily quota, fail-closed| EDGE["Supabase Edge Function"] --> LLM["Claude vision"]
+  C -.->|offline or no key| LIB["Reference library<br/>about 300 foods"]
 
   V --> DIARY[("Local-first diary")]
-  DIARY <-->|"union merge<br/>+ tombstones"| CLOUD[("Postgres · RLS")]
-  DIARY --> TREND["EWMA + Theil–Sen<br/>weight trend"] --> PLAN["Adaptive<br/>calorie target"]
+  DIARY -->|union merge + tombstones| CLOUD[("Postgres with RLS")]
+  DIARY --> TREND["EWMA + Theil-Sen<br/>weight trend"] --> PLAN["Adaptive calorie target"]
 ```
 
 ### The estimation pipeline
