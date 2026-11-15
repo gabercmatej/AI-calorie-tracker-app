@@ -29,63 +29,114 @@ I wanted the experience of apps like Cal AI without a yearly subscription, so I 
 
 | | |
 |---|---|
-| 📸 **Vision-model meal estimates** | Photo and/or description → calories and macros, validated before they reach the diary |
-| 🏷️ **Barcode scanning** | Exact label nutrition from Open Food Facts; label values are never re-estimated |
-| 📈 **Adaptive plan** | Mifflin-St Jeor targets that follow a smoothed (Theil–Sen) weight trend toward your goal |
-| 🍽️ **Food ideas & Ask** | Recipes ranked against your pantry and remaining budget; questions answered from your own log |
-| 🔒 **Secure AI access** | API key behind a Supabase Edge Function with per-user daily limits, failing closed |
-| 📴 **Offline first** | Fully usable without a backend; sync is a tested union merge |
+| **Vision-model meal estimates** | Photo and/or description → calories and macros, validated before they reach the diary |
+| **Barcode scanning** | Exact label nutrition from Open Food Facts; label values are never re-estimated |
+| **Adaptive plan** | Mifflin-St Jeor targets that follow a smoothed (Theil–Sen) weight trend toward your goal |
+| **Food ideas & Ask** | Recipes ranked against your pantry and remaining budget; questions answered from your own log |
+| **Secure AI access** | API key behind a Supabase Edge Function with per-user daily limits, failing closed |
+| **Offline first** | Fully usable without a backend; sync is a tested union merge |
 
-## 🧠 How it works
+## How it works
 
-Most AI calorie apps send a photo to a model and print whatever comes back. This one treats the model as **one untrusted source of evidence among several**, inside a staged estimation pipeline with a strict evidence hierarchy:
+Most AI calorie apps send a photo to a model and print whatever comes back. That fails in ways the user cannot see: the model adds an ingredient nobody ate, drops one that was mentioned, ignores "the milk is 150 kcal", or returns a total that disagrees with its own breakdown. Every one of those looks exactly like a correct answer.
 
-> **A number you typed beats a barcode. A barcode beats the model. The model is only asked about the part nobody else can answer.**
+This app treats the language model as **one untrusted source of evidence inside a staged inference pipeline**. Deterministic code decides what is already known, the model is asked only about what is genuinely unknown, and every answer is validated and repaired before it can reach the diary. The pipeline follows a strict evidence hierarchy:
+
+> **A number you typed beats a barcode label. A barcode label beats the model. The model is only asked about the part nobody else can answer.**
+
+### System architecture
 
 ```mermaid
-flowchart LR
-  INPUT["Photo + description + barcode"] --> A
-
-  subgraph PIPE["Estimation pipeline"]
-    A["A. Parse<br/>deterministic extraction<br/>foods, counts, stated kcal"]
-    B["B. Resolve<br/>scanned labels<br/>remembered products"]
-    C["C. Model<br/>one vision call<br/>for the unknown rest"]
-    V["Validate and repair<br/>dropped or invented foods<br/>totals vs. sum of parts"]
-    D["D. Correct<br/>one follow-up call<br/>only if still needed"]
-    A --> B --> C --> V
-    V -->|missing food| D --> V
+flowchart TB
+  subgraph INPUT["Input"]
+    direction LR
+    PH["Meal photo<br/>(compressed JPEG)"]
+    TX["Free-text description<br/>'3 eggs, toast, the milk is 150 kcal'"]
+    BC["Barcode scan"]
   end
 
-  OFF[("Open Food Facts")] --> B
-  MEM[("Product memory")] --> B
-  C -->|auth, daily quota, fail-closed| EDGE["Supabase Edge Function"] --> LLM["Claude vision"]
-  C -.->|offline or no key| LIB["Reference library<br/>about 300 foods"]
+  subgraph PIPE["Staged estimation pipeline (pure TypeScript, fully unit-tested)"]
+    direction TB
+    A["Stage A: Parse<br/>deterministic extraction of every food,<br/>count, preparation and stated nutrient"]
+    B["Stage B: Resolve<br/>scanned labels and remembered products,<br/>portion scaling by arithmetic, not inference"]
+    C["Stage C: Vision model<br/>one structured-output call (JSON schema)<br/>only for the components still unknown"]
+    V{"Validate and repair<br/>invented food? dropped food?<br/>wrong count? stated kcal ignored?<br/>total ≠ sum of components?"}
+    D["Stage D: Corrective call<br/>a single follow-up, only when a<br/>named food is genuinely missing"]
+    R["Result<br/>per-component kcal and macros,<br/>evidence source and confidence"]
+    A --> B --> C --> V
+    V -->|repairable| R
+    V -->|food missing| D --> V
+  end
 
-  V --> DIARY[("Local-first diary")]
-  DIARY -->|union merge + tombstones| CLOUD[("Postgres with RLS")]
-  DIARY --> TREND["EWMA + Theil-Sen<br/>weight trend"] --> PLAN["Adaptive calorie target"]
+  subgraph KNOW["Known evidence"]
+    direction LR
+    OFF[("Open Food Facts<br/>label nutrition")]
+    MEM[("Product memory<br/>your scanned products")]
+    LIB[("Reference library<br/>offline fallback")]
+  end
+
+  subgraph CLOUD["Secure AI gateway"]
+    direction LR
+    EDGE["Supabase Edge Function<br/>session check · per-user daily quota<br/>request size limit · fails closed"]
+    LLM["Claude Haiku 4.5<br/>vision + structured output"]
+    EDGE <--> LLM
+  end
+
+  subgraph APP["Local-first app"]
+    direction LR
+    DIARY[("Diary<br/>on-device working copy")]
+    SYNC["Sync engine<br/>union merge + tombstones"]
+    DB[("Postgres<br/>row-level security")]
+    DIARY <--> SYNC <--> DB
+  end
+
+  subgraph COACH["Adaptive coaching"]
+    direction LR
+    TREND["Weight trend<br/>EWMA chart + Theil-Sen rate"]
+    PLAN["Adaptive calorie target<br/>Mifflin-St Jeor + observed trend"]
+    SAFE["Long-cut safeguards<br/>advisory only"]
+    ASK["Ask your log<br/>retrieval over your entries"]
+    TREND --> PLAN --> SAFE
+  end
+
+  PH --> A
+  TX --> A
+  BC --> OFF
+  OFF --> B
+  MEM --> B
+  C <--> EDGE
+  C -.->|offline or no key| LIB
+  R --> DIARY
+  DIARY --> TREND
+  DIARY --> ASK
+  ASK <--> EDGE
 ```
 
-### The estimation pipeline
+### Inside the estimation pipeline
 
 | Stage | What happens | Why it matters |
 |---|---|---|
-| **A · Parse** | A deterministic parser extracts every food, count and number you wrote, before any model sees it. | "3 cans", "the milk is 150 kcal" and "…of tuna" become hard constraints that can be checked afterwards. |
-| **B · Resolve** | Scanned labels and remembered products are filled in from real data. "1 scoop protein powder" resolves to *your* powder, scaled by arithmetic, not by a guess. | Known items cost zero model calls and cannot be hallucinated. Unknown conversions surface as a visible question, never a silent 100 g. |
-| **C · Model** | One Claude vision call estimates only what is left on the plate. | Smaller question, cheaper call, fewer ways to be wrong. |
-| **Validate & repair** | Deterministic checks catch the failures that look exactly like a correct answer: an invented ingredient, a dropped one, a wrong count, a total that disagrees with its own components. Most are repaired in place. | The meal total is always recomputed as the sum of its parts. |
-| **D · Correct** | A single corrective call, only when a food you named is genuinely missing. | Keeps the average meal at one model call. |
+| **A · Parse** | A deterministic parser reads what you wrote before any model sees it and turns it into a list of food mentions, each with its quantity, preparation notes and any nutrition you stated. | "3 cans", "…of tuna" and "the milk is 150 kcal" become hard constraints the pipeline can check the model against afterwards. |
+| **B · Resolve** | Scanned barcodes and remembered products are filled in from real label data. "1 scoop protein powder" resolves to *your* protein powder, and the eaten amount is scaled by arithmetic from the label's reference amount. | Known items cost zero model calls and cannot be hallucinated. A conversion the app does not have (a scoop of something known only per 100 g) surfaces as a visible question, never a silent guess. |
+| **C · Vision model** | One call to Claude Haiku 4.5 with the photo and the remaining unknowns, constrained by a JSON schema. Every component comes back with its macros, whether it was *seen* in the photo or *inferred*, and an honest 0–1 confidence. | A smaller, sharper question is cheaper and has fewer ways to be wrong. Structured output removes parsing ambiguity. |
+| **Validate & repair** | Deterministic checks catch an invented ingredient, a dropped one, a count of one that should be three, an overridden stated number, or a headline total that disagrees with its components. Most are **repaired in place**: invented foods dropped, stated values restored, counts rescaled, the total recomputed as the sum of its parts. | These are exactly the errors a user cannot spot, and they never reach the diary. |
+| **D · Correct** | Only when a food you explicitly named is still missing does the pipeline make one corrective call. If that also fails, the reference library supplies an approximate value rather than dropping the food. | The average meal stays at **one model call**, and nothing you named is silently lost. |
 
-The model transport is injected rather than imported, so the entire pipeline, prompts and repair rules included, is tested without a network, a key or a backend.
+The model transport is injected rather than imported, so the entire pipeline, prompts and every repair rule included, is tested without a network, an API key or a backend.
+
+### The AI around the pipeline
+
+- **Ask your own log.** Questions such as "how much protein did I average this week?" are answered from your diary. A retrieval step selects the entries the question can be about, adds a standing summary, and sends that context in a single call. The feature is strictly read-only and falls back to a deterministic answerer offline.
+- **Food ideas.** Recipes are ranked deterministically against your pantry and what is left of today's budget; the model generates new suggestions only on request, and bundled cards take over without a key.
+- **Cost-aware by design.** Photos are compressed before upload to keep vision tokens low, known products skip the model entirely, and the corrective call is the exception rather than the rule.
 
 ### Built like a production system
 
-- **Secure AI gateway.** The Anthropic key never ships in the app. Every call goes through a Supabase Edge Function that verifies the session and enforces a per-user daily quota, and a broken limiter fails *closed*, never open.
-- **Local-first sync that cannot lose data.** The device is always the working copy; the cloud is a mirror. Sync decisions are pure functions with one guarantee: no record is ever lost unless an explicit tombstone says so. Conflicts resolve to the newest write, everything else is a union.
-- **Signal from noisy scale readings.** Daily weight swings are larger than the fat-loss signal under them. A causal exponentially weighted average draws the trend, and a robust Theil–Sen fit measures the rate the adaptive calorie engine runs on, so one salty dinner cannot move your target.
-- **Long-cut safeguards.** After months of dieting the app watches for deficits that quietly grew too large or stalled adherence, and advises rather than overriding the plan, with deliberately slow triggers so water retention cannot set them off.
-- **Ask your own log.** Questions like "how much protein did I average this week?" are answered from your diary through a retrieval step over your own entries; strictly read-only.
-- **Graceful degradation.** With no backend the whole app still works: estimates fall back to a deterministic reference-library lookup, and nothing leaves the device.
+- **Secure AI gateway.** The Anthropic key never ships in the app. Every call goes through a Supabase Edge Function that verifies the user's session, enforces a per-user daily quota and a request size limit, and fails *closed* if the limiter is unavailable.
+- **Local-first sync that cannot lose data.** The device is always the working copy and the cloud a mirror. Sync decisions are pure functions with a single guarantee: no record is ever removed unless an explicit tombstone says so. Collisions resolve to the newest write; everything else is a union.
+- **Signal from noisy scale readings.** Daily weight swings are larger than the fat-loss signal underneath. A causal exponentially weighted moving average draws the trend line, and a robust Theil–Sen slope measures the rate the adaptive calorie engine uses, so one salty dinner cannot move your target.
+- **Long-cut safeguards.** After months of dieting, the app watches for a deficit that has quietly grown too large or adherence that is slipping, and advises rather than overriding the plan. Its triggers are deliberately slow so a fortnight of water retention cannot set them off.
+- **Graceful degradation.** Without a backend the whole app still works: estimates fall back to the deterministic reference library and nothing leaves the device.
 
 ## Get started
 
@@ -184,7 +235,7 @@ vision model). Without a Supabase project configured, `estimateFood` falls back
 to an offline keyword heuristic over the bundled food library, so the logger
 always works. Barcode scanning needs no key at all.
 
-> ⚠️ **Never reintroduce `EXPO_PUBLIC_ANTHROPIC_API_KEY`.** Every
+> **Important:** never reintroduce `EXPO_PUBLIC_ANTHROPIC_API_KEY`.** Every
 > `EXPO_PUBLIC_` variable is inlined into the JavaScript bundle and is readable
 > by anyone with the app or the web build — and a leaked Anthropic key is a
 > bill, not just an exposure. There is deliberately no direct-to-Anthropic
