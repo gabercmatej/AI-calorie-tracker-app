@@ -60,7 +60,7 @@ flowchart TB
     A["Stage A: Parse<br/>deterministic extraction of every food,<br/>count, preparation and stated nutrient"]
     B["Stage B: Resolve<br/>scanned labels and remembered products,<br/>portion scaling by arithmetic, not inference"]
     C["Stage C: Vision model<br/>one structured-output call (JSON schema)<br/>only for the components still unknown"]
-    V{"Validate and repair<br/>invented food? dropped food?<br/>wrong count? stated kcal ignored?<br/>total ≠ sum of components?"}
+    V{"Validate and repair<br/>invented food? dropped food?<br/>wrong count? stated kcal ignored?<br/>total vs. sum of components?"}
     D["Stage D: Corrective call<br/>a single follow-up, only when a<br/>named food is genuinely missing"]
     R["Result<br/>per-component kcal and macros,<br/>evidence source and confidence"]
     A --> B --> C --> V
@@ -79,7 +79,7 @@ flowchart TB
     direction LR
     EDGE["Supabase Edge Function<br/>session check · per-user daily quota<br/>request size limit · fails closed"]
     LLM["Claude Haiku 4.5<br/>vision + structured output"]
-    EDGE <--> LLM
+    EDGE --> LLM
   end
 
   subgraph APP["Local-first app"]
@@ -87,7 +87,7 @@ flowchart TB
     DIARY[("Diary<br/>on-device working copy")]
     SYNC["Sync engine<br/>union merge + tombstones"]
     DB[("Postgres<br/>row-level security")]
-    DIARY <--> SYNC <--> DB
+    DIARY --> SYNC --> DB
   end
 
   subgraph COACH["Adaptive coaching"]
@@ -104,12 +104,12 @@ flowchart TB
   BC --> OFF
   OFF --> B
   MEM --> B
-  C <--> EDGE
+  C --> EDGE
   C -.->|offline or no key| LIB
   R --> DIARY
   DIARY --> TREND
   DIARY --> ASK
-  ASK <--> EDGE
+  ASK --> EDGE
 ```
 
 ### Inside the estimation pipeline
